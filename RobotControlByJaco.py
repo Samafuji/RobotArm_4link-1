@@ -195,7 +195,7 @@ prev_error = np.zeros(3)
 q = [0.0, 0.0, 0.0]  # q1, q2, q3 の初期角度
 
 tol = 1e-3
-alpha = 1
+alpha = 1 # update property
 
 while True:
     data = arduino.readline().decode('utf-8').strip()
