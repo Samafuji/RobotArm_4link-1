@@ -1,0 +1,12 @@
+*.log
+*.cache
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+
+/build/
+*.out
+*.exe
