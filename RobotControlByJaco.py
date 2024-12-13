@@ -8,26 +8,22 @@ arduino = serial.Serial(port='COM8', baudrate=9600, timeout=1)
 
 def get_angles():
     arduino.write(b"GET\n")
-    response = arduino.readline().decode().strip()
-    if response.startswith("ANGLES"):
-        _, q1, q2, q3 = map(int, response.split())
-        return q1, q2, q3
+    response = arduino.readline().decode('utf-8').strip()
+    if response.startswith("POS"):
+        try:
+            _, q1, q2, q3 = map(float, response.split(","))
+            return q1, q2, q3
+        except ValueError as e:
+            print(f"Parsing Error: {e} - Received data: {data}")
     return None
 
-def set_angles(q1, q2, q3):
-    command = f"SET {q1} {q2} {q3}\n"
-    arduino.write(command.encode())
-    response = arduino.readline().decode().strip()
-    return response == "OK"
-
 def send_angles(q1, q2, q3):
-    """
-    sedn joints to Arduino
-    (q1, q2, q3)
-    """
-    command = f"{q1:.2f},{q2:.2f},{q3:.2f}\n"
+    command = f"SET {q1},{q2},{q3}\n"
     arduino.write(command.encode())
-    
+    response = arduino.readline().decode('utf-8').strip()
+    print(response)
+    return response
+
 def jacobian_simulink(theta):
     """
     Compute the Jacobian matrix and its derived forms.
@@ -188,56 +184,108 @@ def pid_control(target, current, kp, ki, kd, integral, prev_error):
     control = kp * error + ki * integral + kd * derivative
     return control, integral, error
 
-def Clamp(Angles):
-    for i in range(len(Angles)):
-        if Angles[i] < 0:
-            Angles[i] = 0
-        elif Angles[i] > 180:
-            Angles[i] = 180
+def Clamp(angles):
+    """
+    角度の制限（0度～180度）
+    """
+    return np.clip(angles, 0, np.pi)
 
-target_pos = np.array([10, 10, 10])
-integral = np.zeros(3)
-prev_error = np.zeros(3)
+def get_position():
+    arduino.write(b"GET\n")
+    try:
+        data = arduino.readline().decode('utf-8').strip()
+        if data.startswith("POS,"):  # Check if it starts with "POS,"
+            try:
+                parts = data[4:].split(",") # Remove "POS," and then split
+                if len(parts) == 3:  # Expecting 3 values (x, y, z)
+                    x, y, z = map(float, parts)
+                    return np.array([x, y, z])
+                else:
+                    print(f"Invalid POS format: Expected 3 values, got {len(parts)}: {data}")
+                    return None
+            except ValueError as parse_error:
+                print(f"Parsing Error (float conversion): {parse_error} - Received data: {data}")
+                return None
+        elif data == "": #タイムアウト時に空の文字列が帰ってくる場合があるのでその処理を追加
+            print("Timeout or empty data received.")
+            return None
+        else:
+            print(f"Unexpected data from Arduino: {data}")
+            return None
+    except serial.SerialTimeoutException:
+        print("Serial read timed out")
+        return None
+    except UnicodeDecodeError as decode_error:
+      print(f"Decoding Error: {decode_error} - Received bytes: {arduino.readline()}")
+      return None
 
-q = [0.0, 0.0, 0.0]  # q1, q2, q3 の初期角度
 
-tol = 1e-3
-alpha = 1 # update property
+def main():
+    target_pos = np.array([100.0, 100.0, 0.0])  # 初期目標位置を適切に設定
+    q = np.array([30.0, 30.0, 30.0])/180*np.pi  # q1, q2, q3 の初期角度 (ラジアン)
+    alpha = 0.1  # ステップサイズ
 
-while True:
-    data = arduino.readline().decode('utf-8').strip()
-    if data:
+    waitACKflip = 0
+    while True:
         try:
-            x, y, z = map(float, data.split(','))
-            target_pos = np.array([x, y, z])
-            print(f"Target Position: x={x}, y={y}, z={z}")
+            data = arduino.readline().decode('utf-8').strip()
+            # print(data)
 
-            x_current, y_current, z_current = forward_kinematics(q[0], q[1], q[2])
-            current_pos = np.array([x_current, y_current, z_current])
+            if waitACKflip:
+                print("here")
+                if  data.startswith("ACK"):
+                    waitACKflip = 0
+                continue
             
+            target_pos = get_position()
+
+            if target_pos is None:
+              time.sleep(1)
+              continue # データ取得に失敗した場合はスキップ
+            waitACKflip = 1
+
+            current_pos = forward_kinematics(q[0], q[1], q[2])
+            # print(f"Target Position : x={target_pos[0]}, y={target_pos[1]}, z={target_pos[2]}")
+            # print(f"Current Position : x={current_pos[0]}, y={current_pos[1]}, z={current_pos[2]}")
+                        
             e = target_pos - current_pos  # 誤差ベクトル
             J = compute_jacobian(q[0], q[1], q[2])
 
             J_pos = J[0:3, :]
-
             J_pinv = np.linalg.pinv(J_pos)
-
             dq = alpha * (J_pinv @ e)
-            print(f"Joint Angles: dq={dq}")
             q = q + dq
-            
-            x_current, y_current, z_current = forward_kinematics(q[0], q[1], q[2])
-            print(f"Joint Angles: q1={q[0]}, q2={q[1]}, q3={q[2]}")
-            print(f"Target Position: x={x}, y={y}, z={z}")
-            print(f"previous pos: x={current_pos[0]}, y={current_pos[1]}, z={current_pos[2]}")
-            print(f"current pos: x={x_current}, y={y_current}, z={z_current}")
-
             q = Clamp(q)
-            
-            # Arduinoに角度を送信
-            send_angles(q[0], q[1], q[2])
 
+            angles_deg = np.array(q) * 180.0 / np.pi
+
+            print(f"Joint Angles: q1={angles_deg[0]:.2f}, q2={angles_deg[1]:.2f}, q3={angles_deg[2]:.2f}")
+            success = send_angles(int(angles_deg[0]), int(angles_deg[1]), int(angles_deg[2]))
+
+            if not success:
+                print("Failed to set angles!")
+
+            time.sleep(0.5)
+
+        except serial.SerialException as serial_error:
+            print(f"Serial Error: {serial_error}")
+            try:
+                arduino.close()
+                arduino.open()
+                print("Serial port reconnected.")
+            except serial.SerialException as e:
+                print(f"Failed to reconnect serial port: {e}")
+                break  # 再接続に失敗したらループを抜ける
+        except KeyboardInterrupt:
+            print("Exiting...")
+            break
         except Exception as e:
-            print(f"Error: {e}")
-    else:
-        print("No data received from Arduino.")
+            print(f"An unexpected error occurred: {e}")
+            break
+
+    if arduino.is_open:
+        arduino.close()
+        print("Serial port closed.")
+
+if __name__ == "__main__":
+    main()
