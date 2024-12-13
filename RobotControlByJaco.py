@@ -4,7 +4,7 @@ import numpy as np
 # from scipy.optimize import fsolve
 import time
 
-arduino = serial.Serial(port='COM3', baudrate=9600, timeout=1)
+arduino = serial.Serial(port='COM8', baudrate=9600, timeout=1)
 
 def get_angles():
     arduino.write(b"GET\n")
@@ -188,6 +188,13 @@ def pid_control(target, current, kp, ki, kd, integral, prev_error):
     control = kp * error + ki * integral + kd * derivative
     return control, integral, error
 
+def Clamp(Angles):
+    for i in range(len(Angles)):
+        if Angles[i] < 0:
+            Angles[i] = 0
+        elif Angles[i] > 180:
+            Angles[i] = 180
+
 target_pos = np.array([10, 10, 10])
 integral = np.zeros(3)
 prev_error = np.zeros(3)
@@ -225,6 +232,8 @@ while True:
             print(f"previous pos: x={current_pos[0]}, y={current_pos[1]}, z={current_pos[2]}")
             print(f"current pos: x={x_current}, y={y_current}, z={z_current}")
 
+            q = Clamp(q)
+            
             # Arduinoに角度を送信
             send_angles(q[0], q[1], q[2])
 

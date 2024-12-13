@@ -3,6 +3,7 @@
 
 .vscode/
 .idea/
+.venv/
 
 .DS_Store
 Thumbs.db
