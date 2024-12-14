@@ -6,24 +6,6 @@ import time
 
 arduino = serial.Serial(port='COM8', baudrate=9600, timeout=1)
 
-def get_angles():
-    arduino.write(b"GET\n")
-    response = arduino.readline().decode('utf-8').strip()
-    if response.startswith("POS"):
-        try:
-            _, q1, q2, q3 = map(float, response.split(","))
-            return q1, q2, q3
-        except ValueError as e:
-            print(f"Parsing Error: {e} - Received data: {data}")
-    return None
-
-def send_angles(q1, q2, q3):
-    command = f"SET {q1},{q2},{q3}\n"
-    arduino.write(command.encode())
-    response = arduino.readline().decode('utf-8').strip()
-    print(response)
-    return response
-
 def jacobian_simulink(theta):
     """
     Compute the Jacobian matrix and its derived forms.
@@ -219,30 +201,37 @@ def get_position():
       print(f"Decoding Error: {decode_error} - Received bytes: {arduino.readline()}")
       return None
 
+def get_angles():
+    arduino.write(b"GET\n")
+    response = arduino.readline().decode('utf-8').strip()
+    if response.startswith("POS"):
+        try:
+            _, q1, q2, q3 = map(float, response.split(","))
+            return q1, q2, q3
+        except ValueError as e:
+            print(f"Parsing Error: {e}")
+    return None
+
+def send_angles(q1, q2, q3):
+    command = f"SET {q1},{q2},{q3}\n"
+    arduino.write(command.encode())
+    time.sleep(0.1)
+    response = arduino.readline().decode('utf-8').strip()
+    return response
 
 def main():
     target_pos = np.array([100.0, 100.0, 0.0])  # 初期目標位置を適切に設定
     q = np.array([30.0, 30.0, 30.0])/180*np.pi  # q1, q2, q3 の初期角度 (ラジアン)
     alpha = 0.1  # ステップサイズ
 
-    waitACKflip = 0
     while True:
         try:
-            data = arduino.readline().decode('utf-8').strip()
-            # print(data)
-
-            if waitACKflip:
-                print("here")
-                if  data.startswith("ACK"):
-                    waitACKflip = 0
-                continue
-            
             target_pos = get_position()
-
+            print("Getting .....")
             if target_pos is None:
-              time.sleep(1)
+              time.sleep(0.1)
+            #   print("waiting for Get ...")
               continue # データ取得に失敗した場合はスキップ
-            waitACKflip = 1
 
             current_pos = forward_kinematics(q[0], q[1], q[2])
             # print(f"Target Position : x={target_pos[0]}, y={target_pos[1]}, z={target_pos[2]}")
@@ -260,22 +249,16 @@ def main():
             angles_deg = np.array(q) * 180.0 / np.pi
 
             print(f"Joint Angles: q1={angles_deg[0]:.2f}, q2={angles_deg[1]:.2f}, q3={angles_deg[2]:.2f}")
+            print("Past .....")
+            
             success = send_angles(int(angles_deg[0]), int(angles_deg[1]), int(angles_deg[2]))
-
-            if not success:
-                print("Failed to set angles!")
+            print(success)
+            while not success.startswith("ACK"):
+                print("waiting for ACK ...")
+                time.sleep(0.1)
 
             time.sleep(0.5)
 
-        except serial.SerialException as serial_error:
-            print(f"Serial Error: {serial_error}")
-            try:
-                arduino.close()
-                arduino.open()
-                print("Serial port reconnected.")
-            except serial.SerialException as e:
-                print(f"Failed to reconnect serial port: {e}")
-                break  # 再接続に失敗したらループを抜ける
         except KeyboardInterrupt:
             print("Exiting...")
             break
