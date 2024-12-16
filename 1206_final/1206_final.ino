@@ -33,9 +33,9 @@ Servo cl_servo;
 
 int minangle = 0;
 int maxangle = 180;
-int angle1 = 90;
-int angle2 = 90;
-int angle3 = 90;
+int angle1 = 110;
+int angle2 = 150;
+int angle3 = 40;
 
 int pos = 0;
 
@@ -81,6 +81,9 @@ void setup() {
   j2_servo.attach(joint2);
   j3_servo.attach(joint3);
   cl_servo.attach(clip);
+  j1_servo.write(joint1);
+  j2_servo.write(joint2);
+  j3_servo.write(joint3);
   cl_servo.write(70);
 }
 

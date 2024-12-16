@@ -1,11 +1,11 @@
 #include <Servo.h>
 
 // ジョイスティックのピン
-int x1Pin = A0; // 左ジョイスティック X
-int y1Pin = A1; // 左ジョイスティック Y
-int z1Pin = A2; // 左ジョイスティック ボタン
+int x1Pin = A0; // 左ジョイスティック X  左x++　　右x--
+int y1Pin = A1; // 左ジョイスティック Y  下z++   上z--
+int z1Pin = A2; // 左ジョイスティック ボタン 
 
-int x2Pin = A3; // 右ジョイスティック X
+int x2Pin = A3; // 右ジョイスティック X   左y++  右y--
 int y2Pin = A4; // 右ジョイスティック Y
 int z2Pin = A5; // 右ジョイスティック ボタン
 
@@ -20,13 +20,12 @@ int clip = 11;
 Servo j1_servo, j2_servo, j3_servo, cl_servo;
 
 // 目標位置と前回の位置
-float x = 100.0, y = 100.0, z = 100.0;
-float prev_x = 100.0, prev_y = 100.0, prev_z = 100.0;
+float x = 85.0, y = 70.0, z = 100.0;
 float step_size = 1.0;
 
-int q0 = 30;
-int q1 = 30;
-int q2 = 30;
+int q0 = 110; //20
+int q1 = 150; //-30
+int q2 = 40; //90
 
 void PressedButtom(int z1, int z2) {
     // ボタン処理（変更なし）
@@ -45,23 +44,45 @@ void PressedButtom(int z1, int z2) {
 
 void JoyStick(int x1, int x2, int y1, float *x, float *y, float *z) {
     // ジョイスティック処理（変更なし）
-    if (x1 > 600) {
-        *x += step_size;
-    } else if (x1 < 400) {
+    if (y1 > 600) {
         *x -= step_size;
+    } else if (y1 < 400) {
+        *x += step_size;
     }
 
-    if (x2 > 600) {
+    if (x1 > 600) {
         *y += step_size;
-    } else if (x2 < 400) {
+    } else if (x1 < 400) {
         *y -= step_size;
     }
 
-    if (y1 > 600) {
-        *z += step_size;
-    } else if (y1 < 400) {
+    if (y2 > 600) {
         *z -= step_size;
+    } else if (y2 < 400) {
+        *z += step_size;
     }
+}
+
+void Clamp(float *x, float *y, float *z)
+{
+  float rRange = 170;
+  if (*x > rRange) {
+        *x = rRange;
+  } else if (*x < 0) {
+      *x = 0;
+  }
+
+  if (*y > rRange) {
+        *y = rRange;
+  } else if (*y < 0) {
+      *y = 0;
+  }
+
+  if (*z > rRange) {
+        *z = rRange;
+  } else if (*z < 20) {
+      *z = 20;
+  }
 }
 
 void setup() {
@@ -87,7 +108,14 @@ void loop() {
 
     JoyStick(x1, x2, y1, &x, &y, &z);
     PressedButtom(z1, z2);
-    
+    Clamp(&x, &y, &z);
+    // Serial.print("Sensor Value: ");
+    // Serial.print(x); // 改行付きで値を表示
+    // Serial.print(" ");
+    // Serial.print(y); // 改行付きで値を表示
+    // Serial.print(" ");
+    // Serial.println(z); // 改行付きで値を表示
+
     if (Serial.available() > 0) {
         String command = Serial.readStringUntil('\n');
         command.trim(); // 空白文字を削除
